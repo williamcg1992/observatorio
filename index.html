@@ -498,7 +498,7 @@ b,strong{font-weight:700}
       <h2>Imagen y estilo</h2>
       <div class="exrow"><button class="btn" id="ex-view">⤓ PNG de la vista actual</button><button class="btn" id="ex-full">⤓ PNG del mapa completo</button></div>
       <label class="toggle"><input type="checkbox" id="ex-title" checked> Incluir título y fuente en la imagen</label>
-      <label class="range" for="ex-theme"><div>Fondo de la imagen</div><select id="ex-theme" class="sel"><option value="screen">Como en pantalla</option><option value="light" selected>Claro (para imprimir o presentar)</option><option value="dark">Oscuro</option></select></label>
+      <label class="range" for="ex-theme"><div>Fondo de la imagen</div><select id="ex-theme" class="sel"><option value="white" selected>Blanco</option><option value="transparent">Transparente (PNG sin fondo)</option><option value="dark">Oscuro</option><option value="screen">Como en pantalla</option></select></label>
       <p class="note" id="ex-msg" style="margin:4px 0 0"></p>
       <div class="sub2">Estilo del mapa</div>
       <label class="range" for="st-names"><div>Cantidad de nombres</div><select id="st-names" class="sel">
@@ -636,6 +636,9 @@ b,strong{font-weight:700}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>
+let DLCAP=null;(async()=>{try{if(window.claude&&claude.use)DLCAP=await claude.use("downloads");}catch(e){DLCAP=null;}})();
+async function saveFile(name,blob){if(DLCAP){try{await DLCAP.save({filename:name,data:blob});return true;}catch(e){if(e&&e.code==="declined")return false;}}
+  const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);return true;}
 /* =============== OPENALEX ACCESS: free API by default, optional personal key =============== */
 const COARSE=window.matchMedia("(pointer:coarse)").matches;
 const STY_DEF={font:"default",bold:false,fs:1,bs:1,lw:1,names:"normal"};
@@ -1169,7 +1172,7 @@ function groupTopics(g){let h="";
 function groupsCSV(){if(!AU)return;const rows=[["grupo","lider","puntaje_lider","integrantes","colaboradores_ocasionales","trabajos","citas","subareas_principales","temas_frecuentes","palabras_clave","anio_inicio","anio_fin"]];
   AU.groups.forEach(g=>{const y=g.wy.filter(Boolean);rows.push([g.idx+1,g.leader.name,Math.round(g.leader.ls),g.members.length,g.extra,g.works,g.cites,g.sfShare.map(x=>x.s.name+" ("+Math.round(x.p*100)+"%)").join(" | "),g.topT.map(t=>t.name).join(" | "),(g.kw||[]).slice(0,10).map(x=>x[0]).join(" | "),d3.min(y)||"",d3.max(y)||""]);});
   const csv="﻿"+rows.map(r=>r.map(v=>{v=String(v??"");return /[",;\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(",")).join("\n");
-  const b=new Blob([csv],{type:"text/csv"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download="grupos_y_temas.csv";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);}
+  saveFile("grupos_y_temas.csv",new Blob([csv],{type:"text/csv"}));}
 function panelGroupsTopics(){if(!AU)return;
   panel.innerHTML=`<div class="ptype">Grupos de coautoría · ${P().label}</div><h3>En qué trabaja cada grupo</h3><p class="empty">${AU.groups.length} grupos con 3 o más autores, ordenados por producción. Tocá uno para ver integrantes, puntaje de liderazgo y artículos.</p>
   <div class="bar" style="display:flex;gap:6px;margin:8px 0"><button class="btn" id="gt-csv">⤓ Exportar grupos y temas (CSV)</button></div>`+
@@ -1458,9 +1461,9 @@ async function exportPNG(full){exMsg("");
   else if(VIEW==="history"){target=document.querySelector("#h-years svg");if(!target){exMsg("Esperá a que termine el análisis histórico.");return;}full=false;}
   else if(VIEW==="authors"&&!AU){exMsg("Primero cargá los autores para poder exportar este mapa.");return;}
   else if(document.getElementById("loadcard")&&!document.getElementById("loadcard").hidden){exMsg("Esperá a que termine de cargar el mapa.");return;}
-  const rootEl=document.documentElement,prevTheme=rootEl.getAttribute("data-theme"),theme=document.getElementById("ex-theme").value;
+  const rootEl=document.documentElement,prevTheme=rootEl.getAttribute("data-theme"),bgMode=document.getElementById("ex-theme").value,theme=bgMode==="white"||bgMode==="transparent"?"light":bgMode,prevBg=rootEl.style.getPropertyValue("--bg");
   try{
-    if(theme!=="screen"){rootEl.setAttribute("data-theme",theme);recolor();}
+    if(theme!=="screen"){rootEl.setAttribute("data-theme",theme);if(theme==="light")rootEl.style.setProperty("--bg","#ffffff");recolor();}
     if(full&&VIEW!=="compare"){const list=VIEW==="topics"?sim.nodes():aMode==="groups"?(gSim?gSim.nodes():[]):(aSim?aSim.nodes():[]);
       if(list.length){restore=(VIEW==="topics"?zT:zA).t;svg.interrupt();svg.call(zoom.transform,fitT(list));}}
     await nextFrame();if(document.fonts&&document.fonts.ready)await document.fonts.ready;
@@ -1470,7 +1473,7 @@ async function exportPNG(full){exMsg("");
     const legendItems=VIEW==="compare"&&typeof cmpSel==="function"?cmpSel().filter(i=>CMP[i.id+PERIOD]):[];const leg=legendItems.length?26:0;
     const cv=document.createElement("canvas");cv.width=Math.round(W*scale);cv.height=Math.round((H+top+bot+leg)*scale);
     const ctx=cv.getContext("2d");const C=n=>css(n);
-    ctx.fillStyle=C("--bg");ctx.fillRect(0,0,cv.width,cv.height);
+    if(bgMode!=="transparent"){ctx.fillStyle=C("--bg");ctx.fillRect(0,0,cv.width,cv.height);}
     const map=document.createElement("canvas");map.width=Math.round(W*scale);map.height=Math.round(H*scale);
     drawSVG(map.getContext("2d"),target,scale);ctx.drawImage(map,0,top*scale);
     ctx.setTransform(scale,0,0,scale,0,0);
@@ -1483,11 +1486,10 @@ async function exportPNG(full){exMsg("");
     const slug=s=>s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40);
     const fname=`mapa-${slug(typeof IAC!=="undefined"?IAC:"uai")}-${VIEW==="topics"?"temas":VIEW==="authors"?"autores":VIEW==="history"?"historico":"comparacion"}-${new Date().toISOString().slice(0,10)}.png`;
     await new Promise(res=>cv.toBlob(b=>{if(!b){exMsg("No se pudo generar la imagen.");return res();}
-      const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=fname;document.body.appendChild(a);a.click();
-      setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);exMsg(`Imagen descargada: ${fname} (${cv.width}×${cv.height} px).`);res();},"image/png"));
+      saveFile(fname,b).then(ok=>{exMsg(ok?`Imagen guardada: ${fname} (${cv.width}×${cv.height} px).`:"Descarga cancelada.");res();});},"image/png"));
   }catch(e){exMsg("No se pudo generar la imagen: "+e.message);}
   finally{if(restore)svg.call(zoom.transform,restore);
-    if(theme!=="screen"){prevTheme==null?rootEl.removeAttribute("data-theme"):rootEl.setAttribute("data-theme",prevTheme);recolor();}}}
+    if(theme!=="screen"){prevTheme==null?rootEl.removeAttribute("data-theme"):rootEl.setAttribute("data-theme",prevTheme);prevBg?rootEl.style.setProperty("--bg",prevBg):rootEl.style.removeProperty("--bg");recolor();}}}
 document.getElementById("ex-view").onclick=()=>exportPNG(false);
 document.getElementById("ex-full").onclick=()=>exportPNG(true);
 
@@ -1901,7 +1903,7 @@ const qcount=f=>qget(`${API}/works?filter=${f}&per_page=1&select=id`).then(d=>d.
 const qgroup=(f,k,n=50)=>qget(`${API}/works?filter=${f}&group_by=${k}&per_page=${n}`).then(d=>d.group_by);
 const yes=g=>g.key==="1"||g.key==="true"||g.key_display_name==="true";
 function clearCaches(){[CMP,IND,NET,NATF,MQ,SPEC].forEach(o=>Object.keys(o).forEach(k=>delete o[k]));Object.keys(DCACHE).forEach(k=>delete DCACHE[k]);}
-function dl(name,text,type){const b=new Blob([text],{type:type||"text/csv"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);}
+function dl(name,text,type){saveFile(name,new Blob([text],{type:type||"text/csv"}));}
 const csvOf=rows=>"﻿"+rows.map(r=>r.map(v=>{v=String(v??"");return /[",;\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(",")).join("\n");
 const P1=v=>v==null||isNaN(v)?"–":(v*100).toFixed(v*100<10?1:0).replace(".",",")+"%";
 
